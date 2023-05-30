@@ -28,33 +28,45 @@ def waitFramerate(T): #TODO if we have enough time, call the garbage collector
 		lastTime = ctime
 
 
-PLAYERS = [] # TODO This should be a dictionary i think
+PLAYERS = {}
+PLAYERS_LOCK = threading.Semaphore()
 
 class Player:
 	def __init__(self, websocket):
 		self.websocket = websocket
+		self.coords = (0,0)
+		self.name = "anon"
+		self.color = "#AB1400"
 
 async def register(websocket):
 	global PLAYERS
 	print("client got")
-	PLAYERS.append(Player(websocket))
+	p = Player(websocket)
+	PLAYERS_LOCK.acquire()
+	PLAYERS[websocket] = p
+	PLAYERS_LOCK.release()
+	return p
 
 async def unregister(websocket):
 	global PLAYERS
-	for i,player in PLAYERS:
-		if player.websocket == websocket:
-			print("client lost")
-			PLAYERS.pop(i)
+	print("client lost")
+	PLAYERS_LOCK.acquire()
+	del PLAYERS[websocket]
+	PLAYERS_LOCK.release()
 
 async def PlayerHandler(websocket, path):
 	global PLAYERS
-	await register(websocket)
+	player = await register(websocket)
 	try:
 		async for message in websocket:
-			data = json.loads(message)
-			for player in PLAYERS: # TODO this is horrible
-				if player.websocket == websocket:
-					print(data)
+			data = json.loads(message) # TODO protections
+			if data["type"] == "controls":
+				player.coords = data["coords"]
+			elif data["type"] == "name":
+				player.name = data["name"]
+				player.color = data["color"]
+			else:
+				print("unknown data type:", data)
 	finally:
 		await unregister(websocket)
 
@@ -63,13 +75,16 @@ def MainLoop():
 		waitFramerate(1/20)
 
 		outgoing = {"type":"frame", "players":[]}
-		for player in PLAYERS:
-			outgoing["players"].append({"coords":user.coords})
-		for player in PLAYERS:
+		PLAYERS_LOCK.acquire()
+		for ws in PLAYERS:
+			player = PLAYERS[ws]
+			outgoing["players"].append({"coords":player.coords, "name":player.name, "color":player.color})
+		for ws in PLAYERS:
 			outgoingMsg = json.dumps(outgoing)
-			asyncio.run(player.websocket.send(outgoingMsg)) #Really, we shouldn't call run each time. We need to make a separate message collector event loop handle thing
+			asyncio.run(ws.send(outgoingMsg)) #Really, we shouldn't call run each time. We need to make a separate message collector event loop handle thing
+		PLAYERS_LOCK.release()
 
 GameThread = threading.Thread(group=None, target=MainLoop, name="GameThread")
 GameThread.start()
-asyncio.get_event_loop().run_until_complete(websockets.serve(boxhead, port=9001))
+asyncio.get_event_loop().run_until_complete(websockets.serve(PlayerHandler, port=9001))
 asyncio.get_event_loop().run_forever()

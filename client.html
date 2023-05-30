@@ -1,85 +1,40 @@
 <html lang="en">
 <meta charset="utf-8" />
-<title>Boxhead</title>
+<title>Coffee Table Simulator</title>
 <body>
-<b>Boxhead</b>
-<p>Controls: Arrows or WASD to move, Shift to pick up weapons, "Z" and "X" or scroll to switch weapons. Mouse to aim; click to shoot.</p>
-<div id="votepane" style="background-color: coral;">
-<h3>VOTE:</h3>
-<label for="options">CUSTOM VOTE:</label>
-<div id="options"></div>
-<button type="button" id="submitcustomvote">Submit Custom Vote</button><br>
-<label for="proposals">PROPOSALS:</label>
-<div id="proposals"></div>
-</div>
-<label for="fname">Name:</label> <input type="text" id="fname" name="fname">
-<input type="color" id="color">
-<button type="button" id="submitName">Submit</button><br>
-<div id="loading">Loading Layout</div>
-<canvas id="canv" width="500" height="500"></canvas><br>
-<input type="range" min="5" max="80" id="scaleSlider"><br>
-<input type="text" id="signBox">
-<button type="button" id="submitSign">Submit</button>
+	<b>Coffee Table Simulator</b>
+	<p>Hey!</p>
+	<label for="fname">Name:</label> <input type="text" id="fname" name="fname">
+	<input type="color" id="color">
+	<button type="button" id="submitName">Submit</button><br>
+	<div id="loading">Loading Layout</div>
+	<canvas id="canv" width="500" height="500"></canvas><br>
 </body>
 <script>
 "use strict";
-var guns_ = {
-	"pistol":{"outline":[0.0, 0.08, 0.5, 0.08, 0.5, -0.08, 0.1, -0.08, 0.1, -0.3, 0.0, -0.3]},
-	"railgun":{"outline":[0, 0.2, 0.8, 0.2, 0.8, 0.1, 0.2, 0.1, 0.2, -0.1, 0.8, -0.1, 0.8, -0.2, 0, -0.2]},
-	"rockets":{"outline":[-0.3, 0.15, 0.7, 0.15, 0.7, -0.15, -0.3, -0.15]},
-	"uzi":{"outline":[0.0, 0.05, 0.7, 0.05, 0.7, -0.05, 0.4, -0.05, 0.4, -0.3, 0.3, -0.3, 0.3, -0.05, 0.2, -0.05, 0.0, -0.2]},
-	"shotgun":{"outline":[-0.075, -0.15, 0.1, 0.05, 0.6, 0.05, 0.6, -0.05, 0.55, -0.05, 0.55, -0.1, 0.4, -0.1, 0.4, -0.05, 0.15, -0.05, 0.0, -0.15]},
-	"barrels":{"outline":[0, 0, 0.5, 0]},
-	"fake walls":{"outline":[0, 0, 0.5, 0]},
-	"mines":{"outline":[0, 0, 0.5, 0]}
-};
-	
+
 class Controls{
 	constructor(){
-		this.k = {"type":"controls", "data":{"up":false, "down":false, "left":false, "right":false, "fire":false, "use":false, "dir":0.0}};
+		this.k = {"type":"controls", "coords":false};
 	}
 }
 class Game{
 	constructor(myCanvas, spriteImg, wspath){
 		myCanvas.style.cursor = "crosshair";
-		this.votepane = document.getElementById("votepane");
-		this.voteoptions = document.getElementById("options");
-		this.voteproposals = document.getElementById("proposals");
-		this.votepane.style.display='none';
-		this.x = 0;//camera location
-		this.y = 0;
-		this.px = 0;
-		this.py = 0;//partial x and y
-		this.scale = 30;//number of pixels per wall section
 		this.spriteImg = spriteImg;
 		this.players = [];
-		this.zombies = [];
-		this.pathmap = [];
-		this.drawPaths = false;
 		this.srvConnect(wspath);
-		this.loadMap([[1,1],[1,1]]);
-		this.votinginfo = null;
-		this.votes = [];
 		this.myCanvas = myCanvas;
 		var ctx = myCanvas.getContext("2d");
 		this.ctx = ctx;
 		this.myKeyboard = new Controls();
 		var me = this;//for lambdas
-		document.getElementById("submitcustomvote").onclick = function(){
-			var data = {}
-			Object.keys(me.customOptions).forEach(optKey => {
-				data[optKey] = me.customOptions[optKey].value;
-			});
-			var sub = JSON.stringify({"type":"vote", "data":data});
-			console.log("Sending Vote: "+sub);
-			me.ws.send(sub);
-		};
 		document.addEventListener("keydown", event => {me.keyboard(event.keyCode, true, event.repeat);});
 		document.addEventListener("keyup", event => {me.keyboard(event.keyCode, false, event.repeat);});
 		myCanvas.addEventListener('mousedown', event => {me.mousedown(true);});
 		myCanvas.addEventListener('mouseup', event => {me.mousedown(false);});
 		myCanvas.addEventListener('mousemove', event => {me.mousemove(event.offsetX, event.offsetY);});
-		myCanvas.addEventListener('wheel', event => {me.setGun(event.deltaY/Math.abs(event.deltaY));});
+		myCanvas.addEventListener('wheel', event => {me.scroll(event.deltaY/Math.abs(event.deltaY));});
 		setInterval(function(){me.draw();}, 1000/20);
 	}
 	srvConnect(path){
@@ -89,102 +44,27 @@ class Game{
 		ws.onmessage = function(event){
 			var data = JSON.parse(event.data);
 			if(data.type == "frame"){
-				me.explosions = data.explosions;
-				me.fakewalls = data.fakewalls;
-				me.barrels = data.barrels;
-				me.mines = data.mines;
-				me.boxes = data.boxes;
-				me.bullets = data.bullets;
-				me.hud = data.HUD;
 				me.players = data.players;
-				me.zombies = data.zombies;
-				me.demons = data.demons;
-				me.signs = data.signs;
-				me.pathmap = data.pathmap;
-				me.scores = data.scores
-				me.x = data.camera[0];
-				me.y = data.camera[1];
-				me.px = data.partialcamera[0];
-				me.py = data.partialcamera[1];
-			}else if(data.type == "mapdata"){
-				me.loadMap(data.map);
-			}else if(data.type == "votinginfo"){
-				me.votinginfo = data.data;
-				console.log("creating new vote: "+JSON.stringify(me.votinginfo));
-				me.voteproposals.innerHTML = '';
-				me.customOptions = {};
-				me.voteoptions.innerHTML = '';
-				Object.keys(me.votinginfo).forEach(dimKey => {
-					var dropdown = document.createElement('select');
-					dropdown.id = dimKey;
-					var droplabel = document.createElement('label');
-					droplabel.htmlFor = dimKey;
-					droplabel.innerHTML = dimKey + ': ';
-					me.customOptions[dimKey] = dropdown;
-					me.votinginfo[dimKey].forEach(opt => {
-						var dropopt = document.createElement('option');
-						dropopt.value = opt;
-						dropopt.innerHTML = opt;
-						dropdown.appendChild(dropopt);
-					});
-					me.voteoptions.appendChild(droplabel);
-					me.voteoptions.appendChild(dropdown);
-					me.voteoptions.appendChild(document.createElement('br'));
-				});
-				me.votepane.style.display='block';
-			}else if(data.type == "votes"){
-				me.votes = data.data;
-				console.log("got votes: "+JSON.stringify(me.votes));
-				me.voteproposals.innerHTML = '';
-				me.votes.forEach(vote => {
-					var votebutton = document.createElement('button');
-					votebutton.innerHTML = JSON.stringify(vote);
-					votebutton.onclick = function(){
-						me.ws.send(JSON.stringify({"type":"vote", "data":vote}));
-					};
-					me.voteproposals.appendChild(votebutton);
-					me.voteproposals.appendChild(document.createElement('br'));
-				});
-			}else if(data.type == "votingover"){
-				me.votepane.style.display='none';
-				me.votinginfo = null;
-				me.votes = [];
 			}else{
 				console.log("Unknown incoming message type: "+data.type);
 			}
 		}
 	}
-	loadMap(wfm){
-		var map = document.createElement("canvas");
-		this.maph = wfm.length;
-		this.mapw = wfm[0].length;
-		map.height = this.maph;
-		map.width = this.mapw;
-		var mapCtx = map.getContext("2d");
-		var mapData = mapCtx.getImageData(0, 0, this.mapw, this.maph).data;
-		this.map = [];
-		for(var i = 0; i < map.height; i++){
-			for(var j = 0; j < map.width; j++){
-				this.map.push(wfm[i][j]);
-			}
-		}
-	}
 	mousedown(down){//down is boolean if mouse is down
 		var k = this.myKeyboard.k.data;
-		k["fire"] = down;
 		var msg = JSON.stringify(this.myKeyboard.k);
 		this.ws.send(msg);
 	}
 	mousemove(x, y){
-		var k = this.myKeyboard.k.data;
-		k["dir"] = Math.atan2(y-250, x-250);
+		var k = this.myKeyboard.k;
+		k["coords"] = [x,y];
 		var msg = JSON.stringify(this.myKeyboard.k);
 		this.ws.send(msg);
 	}
 	keyboard(code, down, repeat){
 		if(repeat){
 			return;
-		}
+		}/*
 		var k = this.myKeyboard.k.data;
 		if(code == 37 || code == 65){
 			k["left"] = down;
@@ -215,178 +95,35 @@ class Game{
 			return;
 		}
 		var msg = JSON.stringify(this.myKeyboard.k);
-		this.ws.send(msg);
-	}
-	setGun(offset){
-		var l = this.hud.guns.length;
-		var newGun = (this.hud.gun+offset+l)%l;
-		console.log("Selecting "+newGun+" out of "+l+" guns");
-		game.ws.send(JSON.stringify({"type":"gun","data":newGun}));
+		this.ws.send(msg);*/
 	}
 	draw(){
 		var ctx = this.ctx;
+		ctx.clearRect(0, 0, this.myCanvas.width, this.myCanvas.height);
 		ctx.font = "10px monospace";
-		ctx.fillStyle = "#707070";//Tile center color
-		ctx.fillRect(0, 0, 500, 500);
-		var vrange = Math.ceil(250/this.scale);//-1 for validation only
-		//var vrange = Math.ceil(250/this.scale)-1;//-1 for validation only
-		for(var tx = Math.max(0, this.x - vrange); tx <= Math.min(this.mapw-1, this.x + vrange); tx++){
-			for(var ty = Math.max(0, this.y - vrange); ty <= Math.min(this.maph-1, this.y + vrange); ty++){
-				var cx = (this.scale*(tx-this.x))-this.scale*this.px+250;
-				var cy = (this.scale*(ty-this.y))-this.scale*this.py+250;
-				var tile = this.map[tx+this.mapw*ty];
-				if(tile == 1){
-					ctx.fillStyle = "#051005";//Wall color
-					ctx.fillRect(cx, cy, this.scale, this.scale);
-				}else if(tile == 2){
-					ctx.fillStyle = "#6521bc";//Toxic color
-					ctx.fillRect(cx, cy, this.scale, this.scale);
-				}else{
-					ctx.strokeStyle = "#606060";//Tile border color
-					ctx.strokeRect(cx, cy, this.scale, this.scale);
-				}
-			}
-		}
 		var me = this;
 		ctx.textAlign = "center";
-		ctx.textBaseline = "middle";
-		ctx.fillStyle = "#000000";
-		this.boxes.forEach(box => {//RB display box with text
-			ctx.drawImage(this.spriteImg, 0, 60, 43, 43, 250+me.scale*box.coords[0]-me.scale*me.px-me.scale*me.x+0.2*me.scale, 250+me.scale*box.coords[1]-me.scale*me.py-me.scale*me.y+0.2*me.scale, me.scale*0.6, me.scale*0.6);
-			var cx = 250+me.scale*box.coords[0]-me.scale*me.px-me.scale*me.x+me.scale*0.5;
-			var cy = 250+me.scale*box.coords[1]-me.scale*me.py-me.scale*me.y+me.scale*0.5;
-			ctx.fillText(box.gun, cx, cy);
-		});
-		this.mines.forEach(mine => {
-			ctx.drawImage(this.spriteImg, 43, 60, 43, 43, 250+me.scale*mine[0]-me.scale*me.px-me.scale*me.x+0.2*me.scale, 250+me.scale*mine[1]-me.scale*me.py-me.scale*me.y+0.2*me.scale, me.scale*0.6, me.scale*0.6);
-		});
-		this.fakewalls.forEach(fw => {
-			ctx.drawImage(this.spriteImg, 86, 60, 43, 43, 250+me.scale*fw[0]-me.scale*me.px-me.scale*me.x, 250+me.scale*fw[1]-me.scale*me.py-me.scale*me.y, me.scale, me.scale);
-		});
-		this.barrels.forEach(b => {
-			ctx.drawImage(this.spriteImg, 129, 60, 43, 43, 250+me.scale*b[0]-me.scale*me.px-me.scale*me.x, 250+me.scale*b[1]-me.scale*me.py-me.scale*me.y, me.scale, me.scale);
-		});
-		ctx.textAlign = "center";
 		ctx.textBaseline = "top";
-		ctx.strokeStyle = "#000000";
 		this.players.forEach(p => {
-			ctx.fillStyle = p.name.color;
+			ctx.strokeStyle = p.color;
 			var x = p.coords[0];
 			var y = p.coords[1];
-			var px = p.partialcoords[0];
-			var py = p.partialcoords[1];
-			var dx = me.scale*(x-me.x)+me.scale*(px-me.px)+250.0;
-			var dy = me.scale*(y-me.y)+me.scale*(py-me.py)+250.0;
-			var sin = Math.sin(p.facedir);
-			var cos = Math.cos(p.facedir);
 			ctx.beginPath();
-			if(Object.keys(guns_).includes(p.gun)){
-				var outline = guns_[p.gun].outline;
-				var rot = [outline[0]*cos-outline[1]*sin, outline[0]*sin+outline[1]*cos];
-				ctx.moveTo(me.scale*rot[0]+dx, me.scale*rot[1]+dy);
-				for(var idx = 1; idx < outline.length/2; idx++){
-					var rot = [outline[idx*2]*cos-outline[idx*2+1]*sin, outline[idx*2]*sin+outline[idx*2+1]*cos];
-					ctx.lineTo(me.scale*rot[0]+dx, me.scale*rot[1]+dy);
-				}
-				ctx.closePath();				
-			}else{
-				ctx.moveTo(dx, dy);
-				ctx.lineTo(dx+me.scale*0.4*cos, dy+me.scale*0.4*sin);
-			}
-			ctx.fillRect(dx-me.scale*0.3, dy-me.scale*0.3, me.scale*0.6, me.scale*0.6);
+			ctx.arc(x, y, 5, 0, 2*Math.PI);
 			ctx.stroke();
-			ctx.fillStyle = "#ffffff";
-			ctx.fillText(p.name.name+" "+p.team, dx, dy+me.scale*0.3);
-		});
-		ctx.fillStyle = "#009030";
-		this.zombies.forEach(p => {
-			var x = p.coords[0];
-			var y = p.coords[1];
-			var px = p.partialcoords[0];
-			var py = p.partialcoords[1];
-			var dx = me.scale*(x-me.x)+me.scale*(px-me.px)+250.0;
-			var dy = me.scale*(y-me.y)+me.scale*(py-me.py)+250.0;
-			ctx.fillRect(dx-me.scale*0.3, dy-me.scale*0.3, me.scale*0.6, me.scale*0.6);
-		});
-		//RB draw red demons
-		ctx.stroke();
-		ctx.fillStyle = "#ff0000";
-		this.demons.forEach(p => {
-			var x = p.coords[0];
-			var y = p.coords[1];
-			var px = p.partialcoords[0];
-			var py = p.partialcoords[1];
-			var dx = me.scale*(x-me.x)+me.scale*(px-me.px)+250.0;
-			var dy = me.scale*(y-me.y)+me.scale*(py-me.py)+250.0;
-			ctx.fillRect(dx-me.scale*0.3, dy-me.scale*0.3, me.scale*0.6, me.scale*0.6);
-		});
-
-		//draw bullets
-		ctx.strokeStyle = "#fcde5a";
-		ctx.beginPath();
-		this.bullets.forEach(function(b){
-			ctx.moveTo(250+(b.start[0]-me.x-me.px)*me.scale, 250+(b.start[1]-me.y-me.py)*me.scale);
-			ctx.lineTo(250+(b.end[0]-me.x-me.px)*me.scale, 250+(b.end[1]-me.y-me.py)*me.scale);
-		});
-		ctx.stroke();
-		//draw explosions
-		ctx.strokeStyle = "#902005";
-		this.explosions.forEach(function(e){
-			var cx = (e.coords[0]-me.x-me.px)*me.scale+250;
-			var cy = (e.coords[1]-me.y-me.py)*me.scale+250;
-			ctx.strokeRect(cx-(e.radius+0.5)*me.scale, cy-(e.radius+0.5)*me.scale, (e.radius*2+1)*me.scale, (e.radius*2+1)*me.scale);
-		});
-		//draw signs
-		ctx.textAlign = "center";
-		ctx.textBaseline = "middle";
-		this.signs.forEach(function(s){
-			var cx = 250+me.scale*s.coords[0]-me.scale*me.px-me.scale*me.x+me.scale*0.5;
-			var cy = 250+me.scale*s.coords[1]-me.scale*me.py-me.scale*me.y+me.scale*0.5;
-			ctx.fillStyle = "#ffffff";
-			ctx.beginPath();
-			ctx.arc(cx, cy, me.scale*0.4, 0, 2*Math.PI);
-			ctx.fill();
 			ctx.fillStyle = "#000000";
-			ctx.fillText(s.message, cx, cy);
+			ctx.fillText(p.name, x, y);
 		});
-		if(this.drawPaths){//Draw zombie paths
-			ctx.strokeStyle = "#00ff00";
-			ctx.beginPath();
-			var rIdx = 0;
-			this.pathmap.forEach(row => {
-				var cIdx = 0;
-				row.forEach(c => {
-					if(c.length != 0){
-						ctx.moveTo(me.scale*(cIdx-me.x)+me.scale*(0.5-me.px)+250, me.scale*(rIdx-me.y)+me.scale*(0.5-me.py)+250);
-						ctx.lineTo(me.scale*(cIdx-me.x)+me.scale*(0.5-me.px)+250+c[0]*me.scale*0.5, me.scale*(rIdx-me.y)+me.scale*(0.5-me.py)+250+c[1]*me.scale*0.5);
-					}
-					cIdx++;
-				});
-				rIdx++;
-
-			});
-			ctx.stroke();
-		}
-		//draw Hud
-		ctx.textAlign = "left";
-		ctx.textBaseline = "top";
-		ctx.fillStyle = "#ffffff";
-		var gun = this.hud.guns[this.hud.gun];
-		ctx.fillText(this.hud.health+" "+gun.name+": "+gun.ammo+" score: "+this.scores[0]+" "+this.scores[1], 10, 10);
-		var healthBound = Math.round(this.hud.health/20 * 200);
-		ctx.drawImage(this.spriteImg, 0, 30, 200, 30, 250-100, 500-30, 200, 30);//Draw empty healthbar
-		if(healthBound > 0){
-			ctx.drawImage(this.spriteImg, 0, 0, healthBound, 30, 250-100, 500-30, healthBound, 30);//Draw full partial healthbar
-		}
 	}
 }
+
 var game;
 var spriteImg = new Image();
 spriteImg.crossOrigin = "";
 spriteImg.src = "sprites.png";
 var ldiv = document.getElementById("loading");
 document.getElementById("submitName").onclick = function(){
-	game.ws.send(JSON.stringify({"type":"name","data":{"name":document.getElementById("fname").value, "color":document.getElementById("color").value}}));
+	game.ws.send(JSON.stringify({"type":"name", "name":document.getElementById("fname").value, "color":document.getElementById("color").value}));
 };
 ldiv.style.display = "none";
 
@@ -394,20 +131,9 @@ ldiv.style.display = "none";
 var params = new URLSearchParams(location.search);
 var wshostname = params.get('host');
 if(wshostname == null){
-	wshostname = "789012.xyz";
+	wshostname = "192.168.0.15";
 }
 
 game = new Game(document.getElementById("canv"), spriteImg, "ws://"+wshostname+":9001");
-
-var scaleSlider = document.getElementById("scaleSlider");
-scaleSlider.value = game.scale;
-scaleSlider.onchange = function(){
-	game.scale = 500/scaleSlider.value;
-};
-var signBox = document.getElementById("signBox");
-var submitSign = document.getElementById("submitSign");
-submitSign.onclick = function(){
-	game.ws.send(JSON.stringify({"type":"sign", "data":signBox.value}));
-};
 </script>
 </html>
